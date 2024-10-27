@@ -1,14 +1,22 @@
 from google.cloud import speech_v1p1beta1 as speech
 from google.cloud import storage
 from googleapiclient.discovery import build
-import youtube_dl
+from yt_dlp import YoutubeDL
 import os
+import logging
+import time
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Set up credentials
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "C:\Users\fisch\AppData\Roaming\gcloud\application_default_credentials.json"
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+logging.basicConfig(level=logging.INFO)
 
 # YouTube API setup
-youtube = build('youtube', 'v3', developerKey='AIzaSyAt95vjsPkv6dwIBw2uyPvwoD73wcNCAgg')
+youtube = build('youtube', 'v3', developerKey=os.getenv("YOUTUBE_API_KEY"))
 
 # Cloud Storage client
 storage_client = storage.Client()
@@ -25,24 +33,40 @@ def download_youtube_audio(video_id, output_filename):
             'preferredquality': '192',
         }],
         'outtmpl': output_filename,
+        'ffmpeg_location': 'C:/FFmpeg/bin',  # Replace with actual path
+        # Add FFmpeg args to convert to mono directly
+        'postprocessor_args': [
+            '-ac', '1'
+        ],
     }
-    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+    with YoutubeDL(ydl_opts) as ydl:
         ydl.download([f'https://www.youtube.com/watch?v={video_id}'])
 
 def upload_to_gcs(bucket_name, source_file_name, destination_blob_name):
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(destination_blob_name)
-    blob.upload_from_filename(source_file_name)
+    try:
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(destination_blob_name)
+        blob.upload_from_filename(source_file_name)
+        logging.info(f"File {source_file_name} uploaded to {destination_blob_name}.")
+    except Exception as e:
+        logging.error(f"An error occurred while uploading to GCS: {e}")
+        raise
 
 def transcribe_audio(gcs_uri):
     audio = speech.RecognitionAudio(uri=gcs_uri)
     config = speech.RecognitionConfig(
         encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-        sample_rate_hertz=16000,
         language_code="en-US",
     )
     operation = speech_client.long_running_recognize(config=config, audio=audio)
-    response = operation.result()
+    
+    # Remove the poll() call and just check done() status
+    print("Waiting for operation to complete...")
+    while not operation.done():
+        print("Still transcribing... Please wait.")
+        time.sleep(30)   # Wait 30 seconds before checking again
+    
+    response = operation.result(timeout=18000)  # Set timeout to 5 hours (18000 seconds)
     
     transcription = ""
     for result in response.results:
@@ -56,9 +80,9 @@ def save_transcription(bucket_name, destination_blob_name, transcription):
     blob.upload_from_string(transcription)
 
 # Main process
-video_id = "YOUR_YOUTUBE_VIDEO_ID"
+video_id = "bKFLqfc1mn0"
 audio_filename = "audio.wav"
-bucket_name = "YOUR_GCS_BUCKET_NAME"
+bucket_name = "my-new-bucket-without-vpc"
 
 # Download YouTube audio
 download_youtube_audio(video_id, audio_filename)

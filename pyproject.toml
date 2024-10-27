@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "yt-transcribe-project"
+version = "0.1.0"
+description = "A short description of your project"
+authors = ["Your Name <your.email@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+yt-dlp = "^2023"  # The version number will be the latest available
+google-cloud-speech = "^2.28.0"
+google-api-python-client = "^2.149.0"
+google-cloud-storage = "^2.18.2"
+python-dotenv = "^1.0.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.2"
